@@ -1,26 +1,19 @@
 // file: app.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-// Khai báo thêm thư viện Analytics theo cấu hình của bạn
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-analytics.js";
 
 class WebGISMonitor {
     constructor() {
-        // Cấu hình cơ bản
         this.mapCoords = [10.045, 105.795];
         this.zoomLevel = 13;
         this.currentMode = 'temp'; 
         this.isScanning = true;
         this.measureActive = false;
         
-        // Dữ liệu bộ nhớ
         this.riverZones = [];
         this.targets = {}; 
         
-        // Quản lý Layer Leaflet
-        this.layers = {
-            targetMarkers: {} // Lưu trữ marker để cập nhật tọa độ thay vì xóa vẽ lại
-        };
+        this.layers = { targetMarkers: {} };
         this.offsets = { lat: 0, lng: 0 };
         
         this.initFirebase();
@@ -31,9 +24,7 @@ class WebGISMonitor {
         this.listenToRealTimeData();
     }
 
-    // KẾT NỐI DATABASE FREE
     initFirebase() {
-        // Đã cập nhật cấu hình Firebase của dự án webgissonghauv2
         const firebaseConfig = {
             apiKey: "AIzaSyAG0RMR1floLIFb6UszyAUrYfjblx8p0Bg",
             authDomain: "webgissonghauv2.firebaseapp.com",
@@ -41,16 +32,13 @@ class WebGISMonitor {
             projectId: "webgissonghauv2",
             storageBucket: "webgissonghauv2.firebasestorage.app",
             messagingSenderId: "847857147478",
-            appId: "1:847857147478:web:5ec5fadc14a4192a2265f7",
-            measurementId: "G-7VMES7V8BR"
+            appId: "1:847857147478:web:5ec5fadc14a4192a2265f7"
+            // Đã gỡ bỏ measurementId và thư viện Analytics để chống lỗi chặn quảng cáo
         };
-        
         const app = initializeApp(firebaseConfig);
         this.db = getDatabase(app);
-        this.analytics = getAnalytics(app); // Khởi tạo Analytics
     }
 
-    // 1. KHỞI TẠO BẢN ĐỒ
     initMap() {
         this.map = L.map('map', {zoomControl: false}).setView(this.mapCoords, this.zoomLevel);
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
@@ -59,7 +47,6 @@ class WebGISMonitor {
             satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }),
             osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 })
         };
-        
         this.currentBasemap = 'satellite';
         this.basemaps[this.currentBasemap].addTo(this.map);
 
@@ -69,26 +56,24 @@ class WebGISMonitor {
         this.measureMarker = null;
     }
 
-    // 2. LẤY DỮ LIỆU TĨNH (VÙNG LÒNG SÔNG) 1 LẦN DUY NHẤT
     loadStaticData() {
         const zonesRef = ref(this.db, 'staticData/riverZones');
         get(zonesRef).then((snapshot) => {
             if (snapshot.exists()) {
                 this.riverZones = snapshot.val();
-                this.renderPolygons();
             } else {
-                // Dữ liệu dự phòng nếu DB trống
-                this.riverZones = [
-                    { id: "VUNG-S1", side: "Luồng Đông", temp: 29.5, doVal: 5.6, tss: 40, coords: [[10.092, 105.736], [10.095, 105.740], [10.086, 105.752], [10.083, 105.748]] }
-                ];
-                this.renderPolygons();
+                // Dữ liệu dự phòng nếu Firebase chưa phản hồi
+                this.riverZones = [{ id: "VUNG-S1", side: "Luồng Đông", temp: 29.5, doVal: 5.6, tss: 40, coords: [[10.092, 105.736], [10.095, 105.740], [10.086, 105.752], [10.083, 105.748]] }];
             }
+            this.renderPolygons();
+        }).catch(err => {
+            console.error("Lỗi tải dữ liệu vùng: ", err);
+            this.riverZones = [{ id: "VUNG-S1", side: "Luồng Đông", temp: 29.5, doVal: 5.6, tss: 40, coords: [[10.092, 105.736], [10.095, 105.740], [10.086, 105.752], [10.083, 105.748]] }];
+            this.renderPolygons();
         });
     }
 
-    // 3. LẮNG NGHE DỮ LIỆU THỜI GIAN THỰC TỪ SENSOR & GPS
     listenToRealTimeData() {
-        // Lắng nghe thay đổi tọa độ của cá / lồng bè
         const targetsRef = ref(this.db, 'realtime/targets');
         onValue(targetsRef, (snapshot) => {
             if (!this.isScanning) return;
@@ -99,7 +84,6 @@ class WebGISMonitor {
             }
         });
 
-        // Lắng nghe thay đổi cảm biến Oxy hòa tan (DO) cho biểu đồ
         const sensorDORef = ref(this.db, 'realtime/sensors/do/currentValue');
         onValue(sensorDORef, (snapshot) => {
             if (!this.isScanning) return;
@@ -128,7 +112,6 @@ class WebGISMonitor {
         });
     }
 
-    // CẬP NHẬT MARKER THAY VÌ XÓA VẼ LẠI
     updateTargetsOnMap() {
         const tbody = document.getElementById('table-body');
         if(tbody) tbody.innerHTML = '';
@@ -138,19 +121,16 @@ class WebGISMonitor {
             const lat = t.lat + this.offsets.lat;
             const lng = t.lng + this.offsets.lng;
 
-            // Nếu marker đã tồn tại, chỉ cần di chuyển nó
             if (this.layers.targetMarkers[key]) {
                 this.layers.targetMarkers[key].setLatLng([lat, lng]);
                 this.layers.targetMarkers[key].setPopupContent(`<b>${t.name}</b><br>Tọa độ: ${lng.toFixed(4)}, ${lat.toFixed(4)}`);
             } else {
-                // Nếu chưa có, tạo mới
                 const color = t.type === 'fish' ? '#ffca3a' : '#ff595e';
                 this.layers.targetMarkers[key] = L.circleMarker([lat, lng], { radius: 8, fillColor: color, weight: 2, color: '#fff', fillOpacity: 1 })
                     .addTo(this.layers.targetGroup)
                     .bindPopup(`<b>${t.name}</b><br>Tọa độ: ${lng.toFixed(4)}, ${lat.toFixed(4)}`);
             }
             
-            // Cập nhật bảng
             if(tbody) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `<td>${t.id}</td><td>${t.name}</td><td id="coord-${t.id}">${lng.toFixed(4)}, ${lat.toFixed(4)}</td>`;
@@ -188,9 +168,7 @@ class WebGISMonitor {
                 options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: min, max: max } } }
             });
         };
-        this.charts = {
-            do: createChart('chart1', '#2ec4b6', 4, 8)
-        };
+        this.charts = { do: createChart('chart1', '#2ec4b6', 4, 8) };
     }
 
     updateChartData(chartInstance, newValue) {
@@ -201,6 +179,5 @@ class WebGISMonitor {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    window.appGIS = new WebGISMonitor();
-});
+// SỬA LỖI KHỞI CHẠY TẠI ĐÂY: Chạy trực tiếp thay vì bọc trong sự kiện đợi DOM
+window.appGIS = new WebGISMonitor();
