@@ -149,9 +149,9 @@
             <div>
                 <div class="section-title">Trung Bình Toàn Tuyến Sông (Live)</div>
                 <div class="variable-list">
-                    <div class="var-item"><span>Nhiệt độ mặt nước:</span><span class="var-val" id="avg-temp" style="color: #ffca3a;">29.2°C</span></div>
-                    <div class="var-item"><span>Oxy hòa tan (DO):</span><span class="var-val" id="avg-do" style="color: #2ec4b6;">5.8 mg/L</span></div>
-                    <div class="var-item"><span>Độ đục (Phù sa TSS):</span><span class="var-val" id="avg-tss" style="color: #ff595e;">42 mg/L</span></div>
+                    <div class="var-item"><span>Nhiệt độ mặt nước:</span><span class="var-val" id="avg-temp" style="color: #ffca3a;">-- °C</span></div>
+                    <div class="var-item"><span>Oxy hòa tan (DO):</span><span class="var-val" id="avg-do" style="color: #2ec4b6;">-- mg/L</span></div>
+                    <div class="var-item"><span>Độ đục (Phù sa TSS):</span><span class="var-val" id="avg-tss" style="color: #ff595e;">-- mg/L</span></div>
                 </div>
             </div>
             
@@ -182,9 +182,8 @@
         </div>
     </div>
 
-    <!-- ĐOẠN SCRIPT ĐÃ ĐƯỢC SỬA LỖI -->
+    <!-- ĐOẠN SCRIPT CẦU NỐI UI -->
     <script>
-        // 1. Đồng hồ thời gian thực
         function updateTime() {
             var now = new Date();
             var timeEl = document.getElementById('live-time');
@@ -193,7 +192,6 @@
         setInterval(updateTime, 1000);
         updateTime();
 
-        // 2. Cầu nối (Bridge) chuyển lệnh từ các nút bấm UI sang file app.js
         function resetMapView() {
             if(window.appGIS && window.appGIS.map) window.appGIS.map.flyTo([10.045, 105.795], 13, { duration: 1.0 });
         }
@@ -263,7 +261,6 @@
             if(btn) btn.classList.add('active');
         }
 
-        // 3. Đổi bản đồ nền
         document.addEventListener('DOMContentLoaded', () => {
             var btnBasemap = document.getElementById('btnBasemap');
             if(btnBasemap) {
