@@ -33,7 +33,6 @@ class WebGISMonitor {
             storageBucket: "webgissonghauv2.firebasestorage.app",
             messagingSenderId: "847857147478",
             appId: "1:847857147478:web:5ec5fadc14a4192a2265f7"
-            // Đã gỡ bỏ measurementId và thư viện Analytics để chống lỗi chặn quảng cáo
         };
         const app = initializeApp(firebaseConfig);
         this.db = getDatabase(app);
@@ -45,7 +44,8 @@ class WebGISMonitor {
 
         this.basemaps = {
             satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }),
-            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 })
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }),
+            topo: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 })
         };
         this.currentBasemap = 'satellite';
         this.basemaps[this.currentBasemap].addTo(this.map);
@@ -61,18 +61,12 @@ class WebGISMonitor {
         get(zonesRef).then((snapshot) => {
             if (snapshot.exists()) {
                 this.riverZones = snapshot.val();
-            } else {
-                // Dữ liệu dự phòng nếu Firebase chưa phản hồi
-                this.riverZones = [{ id: "VUNG-S1", side: "Luồng Đông", temp: 29.5, doVal: 5.6, tss: 40, coords: [[10.092, 105.736], [10.095, 105.740], [10.086, 105.752], [10.083, 105.748]] }];
+                this.renderPolygons();
             }
-            this.renderPolygons();
-        }).catch(err => {
-            console.error("Lỗi tải dữ liệu vùng: ", err);
-            this.riverZones = [{ id: "VUNG-S1", side: "Luồng Đông", temp: 29.5, doVal: 5.6, tss: 40, coords: [[10.092, 105.736], [10.095, 105.740], [10.086, 105.752], [10.083, 105.748]] }];
-            this.renderPolygons();
         });
     }
 
+    // KHÔI PHỤC LẮNG NGHE ĐỦ 3 BIỂU ĐỒ (DO, TSS, FLOW)
     listenToRealTimeData() {
         const targetsRef = ref(this.db, 'realtime/targets');
         onValue(targetsRef, (snapshot) => {
@@ -84,14 +78,21 @@ class WebGISMonitor {
             }
         });
 
-        const sensorDORef = ref(this.db, 'realtime/sensors/do/currentValue');
-        onValue(sensorDORef, (snapshot) => {
-            if (!this.isScanning) return;
-            const newDO = snapshot.val();
-            if (newDO !== null) {
-                this.updateChartData(this.charts.do, newDO);
-                document.getElementById('avg-do').innerText = parseFloat(newDO).toFixed(1) + ' mg/L';
-            }
+        onValue(ref(this.db, 'realtime/sensors/do/currentValue'), (snapshot) => {
+            if (!this.isScanning || snapshot.val() === null) return;
+            this.updateChartData(this.charts.do, snapshot.val());
+            document.getElementById('avg-do').innerText = parseFloat(snapshot.val()).toFixed(1) + ' mg/L';
+        });
+
+        onValue(ref(this.db, 'realtime/sensors/tss/currentValue'), (snapshot) => {
+            if (!this.isScanning || snapshot.val() === null) return;
+            this.updateChartData(this.charts.tss, snapshot.val());
+            document.getElementById('avg-tss').innerText = parseInt(snapshot.val()) + ' mg/L';
+        });
+
+        onValue(ref(this.db, 'realtime/sensors/flow/currentValue'), (snapshot) => {
+            if (!this.isScanning || snapshot.val() === null) return;
+            this.updateChartData(this.charts.flow, snapshot.val());
         });
     }
 
@@ -108,33 +109,77 @@ class WebGISMonitor {
             const poly = L.polygon(shiftedCoords, {
                 fillColor: this.getZoneColor(zone), fillOpacity: 0.6, weight: 1, color: '#fff'
             }).addTo(this.layers.polygonGroup);
-            poly.bindPopup(`<b>${zone.id}</b><br>Nhiệt độ: ${zone.temp}°C<br>DO: ${zone.doVal}`);
+            
+            // Khôi phục popup Polygon chi tiết
+            poly.bindPopup(`
+                <div class="custom-popup">
+                    <div class="custom-popup-header" style="color: ${this.getZoneColor(zone)};">
+                        <i class="fa-solid fa-draw-polygon"></i> <span>Phân Vùng: ${zone.id}</span>
+                    </div>
+                    <div class="custom-popup-body">
+                        <div class="data-row"><span class="data-label">Vị trí:</span><span class="data-value" style="color:#fff; font-size:11px;">${zone.side || 'Lòng sông'}</span></div>
+                        <div class="data-row"><span class="data-label">Nhiệt độ nước:</span><span class="data-value" style="color:#ffca3a;">${zone.temp} °C</span></div>
+                        <div class="data-row"><span class="data-label">Oxy (DO):</span><span class="data-value" style="color:#2ec4b6;">${zone.doVal} mg/L</span></div>
+                        <div class="data-row" style="border:none;"><span class="data-label">Độ đục:</span><span class="data-value" style="color:#ff595e;">${zone.tss} mg/L</span></div>
+                    </div>
+                </div>
+            `);
+            poly.on('mouseover', function() { this.setStyle({ fillOpacity: 0.85, weight: 2, color: '#fff' }); });
+            poly.on('mouseout', function() { this.setStyle({ fillOpacity: 0.6, weight: 1, color: '#fff' }); });
         });
+    }
+
+    // KHÔI PHỤC HIỂN THỊ POPUP CHI TIẾT CỦA CÁ/LỒNG BÈ
+    createTargetPopup(t, dispLat, dispLng) {
+        return `
+            <div class="custom-popup">
+                <div class="custom-popup-header" style="color: ${t.color || '#ffca3a'};">
+                    <i class="fa-solid fa-fish"></i> <span>Mã trạm: ${t.id}</span>
+                </div>
+                <div class="custom-popup-body">
+                    <div class="data-row"><span class="data-label">Đối tượng:</span><span class="data-value" style="color:#fff;">${t.name}</span></div>
+                    <div class="data-row"><span class="data-label">Độ tin cậy AI:</span><span class="data-value" style="color:var(--accent-color);">${t.acc || 0}%</span></div>
+                    <div class="data-row"><span class="data-label">Độ sâu:</span><span class="data-value" style="color:#ffca3a;">${t.depth || 0} m</span></div>
+                    <div class="data-row"><span class="data-label">Vận tốc bơi:</span><span class="data-value">${t.speed || 0} m/s</span></div>
+                    <div class="data-row" style="border:none;"><span class="data-label">Tọa độ GPS:</span><span class="data-value" style="color:var(--active-color);">${dispLng.toFixed(4)}°E, ${dispLat.toFixed(4)}°N</span></div>
+                </div>
+            </div>
+        `;
     }
 
     updateTargetsOnMap() {
         const tbody = document.getElementById('table-body');
         if(tbody) tbody.innerHTML = '';
 
-        Object.keys(this.targets).forEach(key => {
+        Object.keys(this.targets).forEach((key, index) => {
             const t = this.targets[key];
             const lat = t.lat + this.offsets.lat;
             const lng = t.lng + this.offsets.lng;
+            const targetColor = t.color || (t.type === 'fish' ? '#ffca3a' : '#ff595e');
 
             if (this.layers.targetMarkers[key]) {
                 this.layers.targetMarkers[key].setLatLng([lat, lng]);
-                this.layers.targetMarkers[key].setPopupContent(`<b>${t.name}</b><br>Tọa độ: ${lng.toFixed(4)}, ${lat.toFixed(4)}`);
+                this.layers.targetMarkers[key].setPopupContent(this.createTargetPopup(t, lat, lng));
             } else {
-                const color = t.type === 'fish' ? '#ffca3a' : '#ff595e';
-                this.layers.targetMarkers[key] = L.circleMarker([lat, lng], { radius: 8, fillColor: color, weight: 2, color: '#fff', fillOpacity: 1 })
+                this.layers.targetMarkers[key] = L.circleMarker([lat, lng], { radius: 8, fillColor: targetColor, weight: 2, color: '#fff', fillOpacity: 1 })
                     .addTo(this.layers.targetGroup)
-                    .bindPopup(`<b>${t.name}</b><br>Tọa độ: ${lng.toFixed(4)}, ${lat.toFixed(4)}`);
+                    .bindPopup(this.createTargetPopup(t, lat, lng));
             }
             
             if(tbody) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${t.id}</td><td>${t.name}</td><td id="coord-${t.id}">${lng.toFixed(4)}, ${lat.toFixed(4)}</td>`;
-                tr.onclick = () => { this.map.flyTo([lat, lng], 15); this.layers.targetMarkers[key].openPopup(); };
+                if(index === 0) tr.className = "active-row"; // Dòng đầu tiên active
+                tr.innerHTML = `
+                    <td style="font-weight:bold;">${t.id}</td>
+                    <td><span style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-size:10px;">${t.typeName || 'Khác'}</span></td>
+                    <td id="coord-${t.id}" style="color:${targetColor}; font-family:monospace; font-size:11px;">${lng.toFixed(4)}°E, ${lat.toFixed(4)}°N</td>
+                `;
+                tr.onclick = () => { 
+                    document.querySelectorAll('.catch-table tr').forEach(row => row.classList.remove('active-row'));
+                    tr.classList.add('active-row');
+                    this.map.flyTo([lat, lng], 15); 
+                    setTimeout(() => { this.layers.targetMarkers[key].openPopup(); }, 800);
+                };
                 tbody.appendChild(tr);
             }
         });
@@ -144,9 +189,24 @@ class WebGISMonitor {
         this.map.on('click', (e) => {
             if (!this.measureActive) return;
             if (this.measureMarker) this.map.removeLayer(this.measureMarker);
+            
+            const simTemp = (28.2 + Math.random() * 2.2).toFixed(1);
+            const simDO = (5.2 + Math.random() * 1.5).toFixed(2);
+            
             this.measureMarker = L.circleMarker(e.latlng, { radius: 9, fillColor: '#00f5d4', color: '#fff', weight: 3, fillOpacity: 1 })
                 .addTo(this.map)
-                .bindPopup(`<b>Đo nhanh</b><br>Tọa độ: ${e.latlng.lng.toFixed(4)}, ${e.latlng.lat.toFixed(4)}<br>Nhiệt độ: ${(28+Math.random()*2).toFixed(1)}°C`).openPopup();
+                .bindPopup(`
+                    <div class="custom-popup">
+                        <div class="custom-popup-header" style="color: #00f5d4;">
+                            <i class="fa-solid fa-flask"></i> <span>Kết Quả Trạm Đo Nhanh</span>
+                        </div>
+                        <div class="custom-popup-body">
+                            <div class="data-row"><span class="data-label">Tọa độ đo:</span><span class="data-value">${e.latlng.lng.toFixed(4)}°E, ${e.latlng.lat.toFixed(4)}°N</span></div>
+                            <div class="data-row"><span class="data-label">Nhiệt độ:</span><span class="data-value" style="color:#ffca3a;">${simTemp} °C</span></div>
+                            <div class="data-row" style="border:none;"><span class="data-label">Oxy (DO):</span><span class="data-value" style="color:#2ec4b6;">${simDO} mg/L</span></div>
+                        </div>
+                    </div>
+                `).openPopup();
         });
 
         const toggleAI = document.getElementById('toggleAI');
@@ -158,17 +218,22 @@ class WebGISMonitor {
         }
     }
 
+    // KHÔI PHỤC CẤU HÌNH ĐỦ 3 BIỂU ĐỒ 
     initCharts() {
-        const createChart = (canvasId, color, min, max) => {
+        const createChart = (canvasId, color, min, max, initData) => {
             const canvas = document.getElementById(canvasId);
             if(!canvas) return null;
             return new Chart(canvas.getContext('2d'), {
                 type: 'line',
-                data: { labels: ['1','2','3','4','5','6'], datasets: [{ data: [5,5.5,5.2,5.8,5.4,5.6], borderColor: color }] },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: min, max: max } } }
+                data: { labels: ['1','2','3','4','5','6','7','8','9','10'], datasets: [{ data: initData, borderColor: color, backgroundColor: color + '25', fill: true, borderWidth: 2, pointRadius: 0, tension: 0.4 }] },
+                options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false, min: min, max: max } } }
             });
         };
-        this.charts = { do: createChart('chart1', '#2ec4b6', 4, 8) };
+        this.charts = { 
+            do: createChart('chart1', '#2ec4b6', 4, 8, [5.5,5.8,5.7,6.0,5.9,5.8,5.4,5.6,5.8,5.7]),
+            tss: createChart('chart2', '#ff595e', 20, 70, [38,42,40,45,48,44,41,39,42,43]),
+            flow: createChart('chart3', '#ffca3a', 0.2, 1.5, [0.8,0.85,0.7,0.9,1.0,0.85,0.8,0.75,0.8,0.88])
+        };
     }
 
     updateChartData(chartInstance, newValue) {
@@ -179,5 +244,4 @@ class WebGISMonitor {
     }
 }
 
-// SỬA LỖI KHỞI CHẠY TẠI ĐÂY: Chạy trực tiếp thay vì bọc trong sự kiện đợi DOM
 window.appGIS = new WebGISMonitor();
