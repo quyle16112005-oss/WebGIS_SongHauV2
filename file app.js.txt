@@ -1,6 +1,8 @@
 // file: app.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+// Khai báo thêm thư viện Analytics theo cấu hình của bạn
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-analytics.js";
 
 class WebGISMonitor {
     constructor() {
@@ -26,20 +28,26 @@ class WebGISMonitor {
         this.initCharts();
         this.loadStaticData(); 
         this.bindEvents();
-        this.listenToRealTimeData(); // Thay thế startSimulation()
+        this.listenToRealTimeData();
     }
 
     // KẾT NỐI DATABASE FREE
     initFirebase() {
-        // Thay thế các thông số này bằng thông số dự án Firebase của bạn
+        // Đã cập nhật cấu hình Firebase của dự án webgissonghauv2
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "your-project.firebaseapp.com",
-            databaseURL: "https://your-project-default-rtdb.firebaseio.com",
-            projectId: "your-project"
+            apiKey: "AIzaSyAG0RMR1floLIFb6UszyAUrYfjblx8p0Bg",
+            authDomain: "webgissonghauv2.firebaseapp.com",
+            databaseURL: "https://webgissonghauv2-default-rtdb.firebaseio.com",
+            projectId: "webgissonghauv2",
+            storageBucket: "webgissonghauv2.firebasestorage.app",
+            messagingSenderId: "847857147478",
+            appId: "1:847857147478:web:5ec5fadc14a4192a2265f7",
+            measurementId: "G-7VMES7V8BR"
         };
+        
         const app = initializeApp(firebaseConfig);
         this.db = getDatabase(app);
+        this.analytics = getAnalytics(app); // Khởi tạo Analytics
     }
 
     // 1. KHỞI TẠO BẢN ĐỒ
