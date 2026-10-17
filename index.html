@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hệ Thống WebGIS Giám Sát Thủy Sản Sông Hậu</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+    <style>
+        :root {
+            --bg-color: #0b131a;
+            --panel-bg: rgba(16, 28, 38, 0.92);
+            --border-color: rgba(255, 255, 255, 0.15);
+            --text-color: #e2e8f0;
+            --accent-color: #2ec4b6;
+            --active-color: #ff9f1c; 
+        }
+
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; display: flex; flex-direction: column; }
+
+        header { height: 50px; background: #070d12; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; padding: 0 20px; z-index: 2000; }
+        header h1 { margin: 0; font-size: 18px; font-weight: 500; display: flex; align-items: center; gap: 10px; color: #fff; }
+        .nav-right { display: flex; gap: 15px; font-size: 13px; color: #a0aec0; align-items: center; }
+        .nav-btn { cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 4px; border: 1px solid transparent; transition: all 0.2s; }
+        .nav-btn:hover, .nav-btn.active { color: #fff; background: rgba(255,255,255,0.08); border-color: var(--border-color); }
+
+        .main-container { display: flex; flex: 1; height: calc(100% - 50px); position: relative; }
+
+        .sidebar-icons { width: 50px; background: #070d12; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; padding-top: 20px; gap: 25px; z-index: 1000; }
+        .sidebar-icons i { font-size: 18px; color: #718096; cursor: pointer; transition: color 0.3s; padding: 8px; border-radius: 6px; }
+        .sidebar-icons i:hover, .sidebar-icons i.active { color: var(--accent-color); background: rgba(46, 196, 182, 0.1); }
+
+        .control-panel { width: 340px; background: var(--panel-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 15px; gap: 12px; overflow-y: auto; z-index: 1000; backdrop-filter: blur(5px); }
+        .control-panel::-webkit-scrollbar { width: 6px; }
+        .control-panel::-webkit-scrollbar-thumb { background-color: #4a5568; border-radius: 10px; }
+        
+        .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #94a3b8; margin-bottom: 6px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.5px; }
+        
+        .flex-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 4px; }
+        
+        .btn-group { display: flex; gap: 6px; margin-top: 4px; }
+        .action-btn { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .action-btn:hover { background: rgba(255,255,255,0.15); }
+        .action-btn.active { background: var(--active-color); color: #000; font-weight: bold; border-color: var(--active-color); }
+        .action-btn.tool-active { background: var(--accent-color); color: #000; font-weight: bold; border-color: var(--accent-color); }
+
+        .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4a5568; transition: .3s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--active-color); }
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        .range-slider { width: 100%; accent-color: var(--accent-color); cursor: pointer; margin: 2px 0; }
+
+        .variable-list { font-size: 13px; display: flex; flex-direction: column; gap: 5px; }
+        .var-item { display: flex; justify-content: space-between; }
+        .var-val { color: var(--accent-color); font-weight: bold; }
+
+        .chart-box { background: rgba(0,0,0,0.25); border-radius: 6px; padding: 10px; border: 1px solid var(--border-color); }
+        .chart-container { height: 78px; position: relative; margin-top: 4px; }
+
+        #map { flex: 1; height: 100%; background-color: #0b131a; }
+
+        .map-overlay-right { position: absolute; top: 15px; right: 15px; width: 320px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; z-index: 1000; font-size: 12px; backdrop-filter: blur(5px); box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        .catch-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .catch-table th, .catch-table td { text-align: left; padding: 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .catch-table th { color: #718096; font-weight: normal; font-size: 11px; text-transform: uppercase; }
+        .catch-table tr { cursor: pointer; transition: background 0.2s; }
+        .catch-table tr:hover { background: rgba(255, 159, 28, 0.2); } 
+        .catch-table tr.active-row { border-left: 3px solid var(--active-color); background: rgba(255, 159, 28, 0.15); }
+
+        .map-legend { position: absolute; bottom: 20px; left: 410px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 15px; z-index: 1000; font-size: 11px; display: flex; flex-direction: column; gap: 8px; width: 260px; backdrop-filter: blur(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .legend-bar { height: 10px; background: linear-gradient(to right, #2ec4b6, #8ac926, #ffca3a, #ff595e); border-radius: 4px; }
+        .legend-labels { display: flex; justify-content: space-between; color: #a0aec0; font-weight: bold; font-size: 10px; }
+        
+        .leaflet-popup-content-wrapper { background: var(--panel-bg) !important; color: var(--text-color) !important; border: 1px solid var(--border-color); box-shadow: 0 0 20px rgba(0,0,0,0.6); border-radius: 6px; padding: 0; }
+        .leaflet-popup-tip { background: var(--panel-bg) !important; }
+        .custom-popup { width: 230px; font-family: 'Segoe UI', sans-serif; }
+        .custom-popup-header { background: rgba(255, 159, 28, 0.15); padding: 10px; border-bottom: 1px solid var(--border-color); border-top-left-radius: 6px; border-top-right-radius: 6px; display: flex; align-items: center; gap: 8px; font-weight: bold; font-size: 13px; }
+        .custom-popup-body { padding: 12px; font-size: 12px; line-height: 1.8; }
+        .custom-popup-body .data-row { display: flex; justify-content: space-between; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 4px; margin-bottom: 4px; }
+        .custom-popup-body .data-label { color: #a0aec0; }
+        .custom-popup-body .data-value { font-family: monospace; font-size: 13px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1><i class="fa-solid fa-water" style="color: var(--active-color);"></i> WebGIS Giám Sát Thủy Sản Lưu Vực Sông Hậu</h1>
+        <div class="nav-right">
+            <span id="live-time" style="color: var(--active-color); font-weight: bold; margin-right: 10px; font-size: 13px;"></span>
+            <span class="nav-btn" id="btnBasemap" title="Click để đổi nền bản đồ"><i class="fa-solid fa-layer-group"></i> Đổi Nền: Vệ Tinh</span>
+            <span class="nav-btn" id="btnResetView" title="Quay về trung tâm sông Hậu"><i class="fa-solid fa-compress"></i> Toàn Cảnh Sông</span>
+            <span class="nav-btn"><i class="fa-solid fa-user-tie"></i> Lê Gia Kiệt</span>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="sidebar-icons">
+            <i class="fa-solid fa-house active" title="Trang chủ" onclick="resetMapView()"></i>
+            <i class="fa-solid fa-temperature-half" title="Chế độ Nhiệt độ" onclick="switchMode('temp')"></i>
+            <i class="fa-solid fa-wind" title="Chế độ Oxy hòa tan" onclick="switchMode('do')"></i>
+            <i class="fa-solid fa-crosshairs" title="Đo nước tự do" onclick="toggleMeasureTool()"></i>
+            <i class="fa-solid fa-gear" style="margin-top: auto; margin-bottom: 20px;"></i>
+        </div>
+
+        <div class="control-panel">
+            <div>
+                <div class="section-title">
+                    Điều Khiển Lớp GIS 
+                    <span id="model-status" style="color: var(--active-color); font-size: 11px;"><i class="fa-solid fa-satellite-dish"></i> Đang quét</span>
+                </div>
+                <div class="flex-row">
+                    <span>Hiển thị Vùng nhiệt & Trạm cá</span>
+                    <label class="switch"><input type="checkbox" id="toggleAI" checked><span class="slider"></span></label>
+                </div>
+                
+                <div style="font-size: 12px; color: #a0aec0; margin-top: 6px;">Chế độ hiển thị Vùng nước (Polygon):</div>
+                <div class="btn-group">
+                    <button class="action-btn active" id="mode-temp" onclick="switchMode('temp')"><i class="fa-solid fa-temperature-high"></i> Nhiệt độ</button>
+                    <button class="action-btn" id="mode-do" onclick="switchMode('do')"><i class="fa-solid fa-droplet"></i> Oxy (DO)</button>
+                    <button class="action-btn" id="mode-tss" onclick="switchMode('tss')"><i class="fa-solid fa-smog"></i> Phù sa</button>
+                </div>
+
+                <div class="btn-group" style="margin-top: 6px;">
+                    <button class="action-btn" id="btnMeasure" onclick="toggleMeasureTool()">
+                        <i class="fa-solid fa-crosshairs"></i> Bật Click Bản Đồ Đo Nước Tự Do
+                    </button>
+                </div>
+
+                <!-- CÔNG CỤ VI CHỈNH TỌA ĐỘ TRỰC TIẾP TRÊN WEB -->
+                <div style="margin-top: 10px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 5px; border: 1px dashed var(--border-color);">
+                    <div style="font-size: 11px; color: var(--accent-color); font-weight: bold; margin-bottom: 4px; display:flex; justify-content:space-between;">
+                        <span><i class="fa-solid fa-arrows-up-down-left-right"></i> Vi Chỉnh Khớp Lòng Sông</span>
+                        <span style="cursor:pointer; color:#ffca3a; text-decoration:underline;" onclick="resetOffsets()">Mặc định</span>
+                    </div>
+                    <div class="flex-row" style="font-size:11px; margin:0;">
+                        <span>Trái / Phải (Kinh độ):</span>
+                        <input type="range" id="offsetLng" class="range-slider" style="width:130px;" min="-0.025" max="0.025" step="0.0005" value="0" oninput="applyOffset()">
+                    </div>
+                    <div class="flex-row" style="font-size:11px; margin:0;">
+                        <span>Lên / Xuống (Vĩ độ):</span>
+                        <input type="range" id="offsetLat" class="range-slider" style="width:130px;" min="-0.025" max="0.025" step="0.0005" value="0" oninput="applyOffset()">
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <div class="section-title">Trung Bình Toàn Tuyến Sông (Live)</div>
+                <div class="variable-list">
+                    <div class="var-item"><span>Nhiệt độ mặt nước:</span><span class="var-val" id="avg-temp" style="color: #ffca3a;">29.2°C</span></div>
+                    <div class="var-item"><span>Oxy hòa tan (DO):</span><span class="var-val" id="avg-do" style="color: #2ec4b6;">5.8 mg/L</span></div>
+                    <div class="var-item"><span>Độ đục (Phù sa TSS):</span><span class="var-val" id="avg-tss" style="color: #ff595e;">42 mg/L</span></div>
+                </div>
+            </div>
+            
+            <div class="chart-box"><div class="section-title" style="border:0; margin:0;">Biến Động Oxy Hòa Tan (mg/L)</div><div class="chart-container"><canvas id="chart1"></canvas></div></div>
+            <div class="chart-box"><div class="section-title" style="border:0; margin:0;">Chỉ Số Phù Sa / Độ Đục (mg/L)</div><div class="chart-container"><canvas id="chart2"></canvas></div></div>
+            <div class="chart-box"><div class="section-title" style="border:0; margin:0;">Lưu Tốc Dòng Chảy (m/s)</div><div class="chart-container"><canvas id="chart3"></canvas></div></div>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="map-overlay-right">
+            <div class="section-title" style="color: var(--active-color);">Theo Dõi Đàn Cá / Lồng Bè (V4.0)</div>
+            <div class="btn-group" style="margin-bottom: 8px;">
+                <button class="action-btn active" id="filter-all" onclick="filterTargets('all')">Tất cả (4)</button>
+                <button class="action-btn" id="filter-fish" onclick="filterTargets('fish')">Đàn cá (3)</button>
+                <button class="action-btn" id="filter-cage" onclick="filterTargets('cage')">Lồng bè (1)</button>
+            </div>
+            <table class="catch-table">
+                <thead><tr><th>Mã Trạm</th><th>Loại</th><th>Tọa Độ (Click để Zoom)</th></tr></thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <div class="map-legend">
+            <span id="legend-title" style="font-weight: bold; color: #fff; font-size: 12px;"><i class="fa-solid fa-draw-polygon"></i> Vùng Nhiệt Độ Mặt Nước Sông Hậu (°C)</span>
+            <div class="legend-bar"></div>
+            <div class="legend-labels" id="legend-labels"><span>27.5°C (Mát)</span><span>29.0°C</span><span>31.0°C (Nóng)</span></div>
+        </div>
+    </div>
+
+    <script>
+        function updateTime() {
+            var now = new Date();
+            document.getElementById('live-time').innerHTML = '<i class="fa-solid fa-tower-broadcast"></i> Trạm Cần Thơ: ' + now.toLocaleTimeString('vi-VN');
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 1. KHỞI TẠO BẢN ĐỒ
+        var map = L.map('map', {zoomControl: false}).setView([10.045, 105.795], 13);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        var basemaps = {
+            satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: '© Esri' }),
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }),
+            topo: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: '© Esri' })
+        };
+        var currentBasemap = 'satellite';
+        basemaps.satellite.addTo(map);
+
+        document.getElementById('btnBasemap').onclick = function() {
+            map.removeLayer(basemaps[currentBasemap]);
+            if (currentBasemap === 'satellite') {
+                currentBasemap = 'osm';
+                this.innerHTML = '<i class="fa-solid fa-layer-group"></i> Đổi Nền: Bản Đồ Đường Phố';
+            } else if (currentBasemap === 'osm') {
+                currentBasemap = 'topo';
+                this.innerHTML = '<i class="fa-solid fa-layer-group"></i> Đổi Nền: Địa Hình';
+            } else {
+                currentBasemap = 'satellite';
+                this.innerHTML = '<i class="fa-solid fa-layer-group"></i> Đổi Nền: Vệ Tinh';
+            }
+            basemaps[currentBasemap].addTo(map);
+        };
+
+        function resetMapView() { map.flyTo([10.045, 105.795], 13, { duration: 1.0 }); }
+        document.getElementById('btnResetView').onclick = resetMapView;
+
+        var aiLayerGroup = L.layerGroup().addTo(map);
+        var polygonLayerGroup = L.layerGroup().addTo(aiLayerGroup);
+        var targetLayerGroup = L.layerGroup().addTo(aiLayerGroup);
+        var measureMarker = null;
+
+        // 2. TỌA ĐỘ LÒNG SÔNG HẬU ĐÃ ĐƯỢC ĐO ĐẠC VÀ HIỆU CHỈNH TỪ ẢNH CHỤP MÀN HÌNH
+        // Các đốt từ giữa đến cuối được đẩy mạnh sang hướng Đông Bắc (tăng kinh độ) để nằm hoàn toàn trong luồng chính sông Hậu
+        var riverBanks = [
+            { left: [10.092, 105.736], right: [10.098, 105.744] }, // Đoạn 1: Đã chuẩn trên ảnh cũ
+            { left: [10.083, 105.748], right: [10.089, 105.756] }, // Đoạn 2: Đã chuẩn
+            { left: [10.074, 105.762], right: [10.080, 105.771] }, // Đoạn 3: Bắt đầu ôm vòng qua bờ Bắc Cồn Khương
+            { left: [10.064, 105.776], right: [10.070, 105.785] }, // Đoạn 4: Luồng chính phía Đông Bắc Cồn Khương
+            { left: [10.054, 105.789], right: [10.060, 105.798] }, // Đoạn 5: Ngang Bến Ninh Kiều (nhánh sông lớn)
+            { left: [10.044, 105.800], right: [10.050, 105.809] }, // Đoạn 6: Luồng chính phía Đông Bắc Cồn Ấu
+            { left: [10.034, 105.810], right: [10.040, 105.819] }, // Đoạn 7: Khu vực Cầu Cần Thơ
+            { left: [10.023, 105.818], right: [10.029, 105.828] }, // Đoạn 8: Hạ lưu Cầu Cần Thơ
+            { left: [10.011, 105.826], right: [10.017, 105.836] }, // Đoạn 9: Ngã ba sông Cái Răng - Sông Hậu
+            { left: [9.999,  105.833], right: [10.005, 105.843] }  // Đoạn 10: Cửa sông trước Cù lao Tân Quy
+        ];
+
+        var currentMode = 'temp';
+        var userOffsetLat = 0;
+        var userOffsetLng = 0;
+        var riverZones = [];
+
+        for (var i = 0; i < riverBanks.length - 1; i++) {
+            var b1 = riverBanks[i];
+            var b2 = riverBanks[i+1];
+            
+            var mid1 = [(b1.left[0] + b1.right[0])/2, (b1.left[1] + b1.right[1])/2];
+            var mid2 = [(b2.left[0] + b2.right[0])/2, (b2.left[1] + b2.right[1])/2];
+
+            var subPolys = [
+                { baseCoords: [b1.left, mid1, mid2, b2.left], side: "Luồng Tây Nam (Phía Cần Thơ)" },
+                { baseCoords: [mid1, b1.right, b2.right, mid2], side: "Luồng Đông Bắc (Phía Vĩnh Long)" }
+            ];
+
+            subPolys.forEach(function(sub, idx) {
+                riverZones.push({
+                    id: "VUNG-S" + (i+1) + (idx === 0 ? "A" : "B"),
+                    side: sub.side,
+                    temp: parseFloat((28.0 + Math.random() * 2.8).toFixed(1)),
+                    doVal: parseFloat((5.0 + Math.random() * 1.8).toFixed(1)),
+                    tss: Math.floor(25 + Math.random() * 45),
+                    baseCoords: sub.baseCoords
+                });
+            });
+        }
+
+        function getZoneColor(zone) {
+            if (currentMode === 'temp') {
+                return zone.temp > 30.0 ? '#ff595e' : zone.temp > 29.2 ? '#ffca3a' : zone.temp > 28.5 ? '#8ac926' : '#2ec4b6';
+            } else if (currentMode === 'do') {
+                return zone.doVal < 5.3 ? '#ff595e' : zone.doVal < 5.8 ? '#ffca3a' : zone.doVal < 6.3 ? '#8ac926' : '#2ec4b6';
+            } else {
+                return zone.tss > 55 ? '#ff595e' : zone.tss > 45 ? '#ffca3a' : zone.tss > 35 ? '#8ac926' : '#2ec4b6';
+            }
+        }
+
+        function renderRiverPolygons() {
+            polygonLayerGroup.clearLayers();
+            riverZones.forEach(function(zone) {
+                var shiftedCoords = zone.baseCoords.map(function(pt) {
+                    return [pt[0] + userOffsetLat, pt[1] + userOffsetLng];
+                });
+
+                var poly = L.polygon(shiftedCoords, {
+                    fillColor: getZoneColor(zone),
+                    fillOpacity: 0.6,
+                    color: 'rgba(255, 255, 255, 0.3)',
+                    weight: 1
+                }).addTo(polygonLayerGroup);
+
+                poly.bindPopup(`
+                    <div class="custom-popup">
+                        <div class="custom-popup-header" style="color: ${getZoneColor(zone)};">
+                            <i class="fa-solid fa-draw-polygon"></i> <span>Phân Vùng: ${zone.id}</span>
+                        </div>
+                        <div class="custom-popup-body">
+                            <div class="data-row"><span class="data-label">Vị trí luồng:</span><span class="data-value" style="color:#fff; font-size:11px;">${zone.side}</span></div>
+                            <div class="data-row"><span class="data-label">Nhiệt độ nước:</span><span class="data-value" style="color:#ffca3a;">${zone.temp} °C</span></div>
+                            <div class="data-row"><span class="data-label">Oxy hòa tan (DO):</span><span class="data-value" style="color:#2ec4b6;">${zone.doVal} mg/L</span></div>
+                            <div class="data-row" style="border:none;"><span class="data-label">Độ đục (Phù sa):</span><span class="data-value" style="color:#ff595e;">${zone.tss} mg/L</span></div>
+                        </div>
+                    </div>
+                `);
+
+                poly.on('mouseover', function() { this.setStyle({ fillOpacity: 0.85, weight: 2, color: '#fff' }); });
+                poly.on('mouseout', function() { this.setStyle({ fillOpacity: 0.6, weight: 1, color: 'rgba(255, 255, 255, 0.3)' }); });
+            });
+        }
+        renderRiverPolygons();
+
+        // Xử lý thanh trượt Vi Chỉnh
+        window.applyOffset = function() {
+            userOffsetLng = parseFloat(document.getElementById('offsetLng').value);
+            userOffsetLat = parseFloat(document.getElementById('offsetLat').value);
+            renderRiverPolygons();
+            renderTargets();
+        };
+
+        window.resetOffsets = function() {
+            document.getElementById('offsetLng').value = 0;
+            document.getElementById('offsetLat').value = 0;
+            applyOffset();
+        };
+
+        window.switchMode = function(mode) {
+            currentMode = mode;
+            document.querySelectorAll('#mode-temp, #mode-do, #mode-tss').forEach(b => b.classList.remove('active'));
+            document.getElementById('mode-' + mode).classList.add('active');
+
+            var titleEl = document.getElementById('legend-title');
+            var labelsEl = document.getElementById('legend-labels');
+            if (mode === 'temp') {
+                titleEl.innerHTML = '<i class="fa-solid fa-draw-polygon"></i> Vùng Nhiệt Độ Mặt Nước Sông Hậu (°C)';
+                labelsEl.innerHTML = '<span>28.0°C (Mát)</span><span>29.2°C</span><span>30.5°C (Nóng)</span>';
+            } else if (mode === 'do') {
+                titleEl.innerHTML = '<i class="fa-solid fa-draw-polygon"></i> Phân Vùng Oxy Hòa Tan DO (mg/L)';
+                labelsEl.innerHTML = '<span>> 6.5 (Tốt)</span><span>5.8 (TB)</span><span>< 5.2 (Thiếu Oxy)</span>';
+            } else {
+                titleEl.innerHTML = '<i class="fa-solid fa-draw-polygon"></i> Phân Vùng Độ Đục Phù Sa TSS (mg/L)';
+                labelsEl.innerHTML = '<span>25 (Trong)</span><span>45 (Vừa)</span><span>> 60 (Đục cao)</span>';
+            }
+            renderRiverPolygons();
+        };
+
+        // 3. CÔNG CỤ CLICK ĐO NƯỚC TỰ DO
+        var measureActive = false;
+        window.toggleMeasureTool = function() {
+            measureActive = !measureActive;
+            var btn = document.getElementById('btnMeasure');
+            if (measureActive) {
+                btn.classList.add('tool-active');
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Đang Bật: Click Vào Sông Để Đo';
+                document.getElementById('map').style.cursor = 'crosshair';
+            } else {
+                btn.classList.remove('tool-active');
+                btn.innerHTML = '<i class="fa-solid fa-crosshairs"></i> Bật Click Bản Đồ Đo Nước Tự Do';
+                document.getElementById('map').style.cursor = '';
+                if (measureMarker) { map.removeLayer(measureMarker); measureMarker = null; }
+            }
+        };
+
+        map.on('click', function(e) {
+            if (!measureActive) return;
+            if (measureMarker) map.removeLayer(measureMarker);
+
+            var simTemp = (28.2 + Math.random() * 2.2).toFixed(1);
+            var simDO = (5.2 + Math.random() * 1.5).toFixed(2);
+            var simPH = (7.1 + Math.random() * 0.6).toFixed(2);
+            var simSuitability = simDO > 5.8 ? "Rất thích hợp nuôi cá" : "Bình thường";
+
+            measureMarker = L.circleMarker(e.latlng, { radius: 9, fillColor: '#00f5d4', color: '#fff', weight: 3, fillOpacity: 1 }).addTo(map);
+            measureMarker.bindPopup(`
+                <div class="custom-popup">
+                    <div class="custom-popup-header" style="color: #00f5d4;">
+                        <i class="fa-solid fa-flask"></i> <span>Kết Quả Trạm Đo Nhanh</span>
+                    </div>
+                    <div class="custom-popup-body">
+                        <div class="data-row"><span class="data-label">Tọa độ đo:</span><span class="data-value">${e.latlng.lng.toFixed(4)}°E, ${e.latlng.lat.toFixed(4)}°N</span></div>
+                        <div class="data-row"><span class="data-label">Nhiệt độ tại điểm:</span><span class="data-value" style="color:#ffca3a;">${simTemp} °C</span></div>
+                        <div class="data-row"><span class="data-label">Oxy hòa tan (DO):</span><span class="data-value" style="color:#2ec4b6;">${simDO} mg/L</span></div>
+                        <div class="data-row"><span class="data-label">Độ pH nước ngọt:</span><span class="data-value">${simPH}</span></div>
+                        <div class="data-row" style="border:none;"><span class="data-label">Đánh giá AI:</span><span class="data-value" style="color:#8ac926; font-size:11px;">${simSuitability}</span></div>
+                    </div>
+                </div>
+            `).openPopup();
+        });
+
+        // 4. CÁC TRẠM CÁ & LỒNG BÈ ĐẶT NGAY TRÊN TRỤC TIM SÔNG MỚI
+        var aquaticTargets = [
+            { id: "TRAM-01", type: "fish", typeName: "Đàn cá", name: "Đàn Cá Tra Tự Nhiên", lat: 10.077, lng: 105.766, originLat: 10.077, originLng: 105.766, color: "#ffca3a", acc: 92, speedLat: -0.00010, speedLng: 0.00012, dirLat: 1, dirLng: 1, depth: 9.5 },
+            { id: "TRAM-02", type: "cage", typeName: "Lồng bè", name: "Khu Lồng Bè Cồn Ấu", lat: 10.052, lng: 105.798, originLat: 10.052, originLng: 105.798, color: "#ff595e", acc: 98, speedLat: 0, speedLng: 0, dirLat: 1, dirLng: 1, depth: 3.5 },
+            { id: "TRAM-03", type: "fish", typeName: "Đàn tôm", name: "Bãi Tôm Càng Xanh", lat: 10.032, lng: 105.818, originLat: 10.032, originLng: 105.818, color: "#2ec4b6", acc: 88, speedLat: -0.00008, speedLng: 0.00008, dirLat: 1, dirLng: 1, depth: 11.0 },
+            { id: "TRAM-04", type: "fish", typeName: "Đàn cá", name: "Đàn Cá Lăng Sông Hậu", lat: 10.012, lng: 105.832, originLat: 10.012, originLng: 105.832, color: "#00b4d8", acc: 86, speedLat: -0.00012, speedLng: 0.00010, dirLat: 1, dirLng: 1, depth: 14.0 }
+        ];
+
+        var currentFilter = 'all';
+        var tableBody = document.getElementById('table-body');
+
+        function createPopupHTML(target) {
+            var currentSpeed = (target.speedLat === 0 && target.speedLng === 0) ? 0 : (Math.abs(target.speedLat) + Math.abs(target.speedLng)) * 3000 + Math.random() * 0.2;
+            var dispLat = target.lat + userOffsetLat;
+            var dispLng = target.lng + userOffsetLng;
+            return `
+                <div class="custom-popup">
+                    <div class="custom-popup-header" style="color: ${target.color};">
+                        <i class="fa-solid fa-fish"></i> <span>Mã trạm: ${target.id}</span>
+                    </div>
+                    <div class="custom-popup-body">
+                        <div class="data-row"><span class="data-label">Đối tượng:</span><span class="data-value" style="color:#fff;">${target.name}</span></div>
+                        <div class="data-row"><span class="data-label">Độ tin cậy AI:</span><span class="data-value" style="color:var(--accent-color);">${target.acc}%</span></div>
+                        <div class="data-row"><span class="data-label">Độ sâu:</span><span class="data-value" style="color:#ffca3a;">${target.depth} m</span></div>
+                        <div class="data-row"><span class="data-label">Vận tốc bơi:</span><span class="data-value">${currentSpeed.toFixed(2)} m/s</span></div>
+                        <div class="data-row" style="border:none;"><span class="data-label">Tọa độ GPS:</span><span class="data-value" style="color:var(--active-color);">${dispLng.toFixed(4)}°E, ${dispLat.toFixed(4)}°N</span></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTargets() {
+            targetLayerGroup.clearLayers();
+            tableBody.innerHTML = '';
+
+            aquaticTargets.forEach(function(target, index) {
+                if (currentFilter !== 'all' && target.type !== currentFilter) return;
+
+                var dispLat = target.lat + userOffsetLat;
+                var dispLng = target.lng + userOffsetLng;
+
+                target.marker = L.circleMarker([dispLat, dispLng], { radius: 8, fillColor: target.color, color: "#fff", weight: 2, fillOpacity: 1 }).addTo(targetLayerGroup);
+                target.marker.bindPopup(createPopupHTML(target));
+
+                var tr = document.createElement('tr');
+                tr.id = "row-" + target.id;
+                if(index === 0) tr.className = "active-row";
+                tr.innerHTML = `
+                    <td style="font-weight:bold;">${target.id}</td>
+                    <td><span style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-size:10px;">${target.typeName}</span></td>
+                    <td id="coord-${target.id}" style="color:${target.color}; font-family:monospace; font-size:11px;">${dispLng.toFixed(4)}°E, ${dispLat.toFixed(4)}°N</td>
+                `;
+                
+                tr.onclick = function() {
+                    document.querySelectorAll('.catch-table tr').forEach(row => row.classList.remove('active-row'));
+                    tr.classList.add('active-row');
+                    if(document.getElementById('toggleAI').checked) {
+                        map.flyTo([target.lat + userOffsetLat, target.lng + userOffsetLng], 15, { duration: 1.2 });
+                        setTimeout(() => { target.marker.openPopup(); }, 1250);
+                    }
+                };
+                tableBody.appendChild(tr);
+            });
+        }
+        renderTargets();
+
+        window.filterTargets = function(filterType) {
+            currentFilter = filterType;
+            document.querySelectorAll('#filter-all, #filter-fish, #filter-cage').forEach(b => b.classList.remove('active'));
+            document.getElementById('filter-' + filterType).classList.add('active');
+            renderTargets();
+        };
+
+        // 5. CHUYỂN ĐỘNG CỦA CÁ DỌC THEO LÒNG SÔNG
+        setInterval(function() {
+            if (!document.getElementById('toggleAI').checked) return; 
+
+            aquaticTargets.forEach(function(target) {
+                if(target.speedLat === 0 && target.speedLng === 0) return; 
+
+                target.lat += (target.speedLat * target.dirLat);
+                target.lng += (target.speedLng * target.dirLng);
+
+                if (Math.abs(target.lat - target.originLat) > 0.0010) {
+                    target.dirLat *= -1;
+                    target.dirLng *= -1;
+                }
+
+                var dispLat = target.lat + userOffsetLat;
+                var dispLng = target.lng + userOffsetLng;
+
+                if (target.marker) {
+                    target.marker.setLatLng([dispLat, dispLng]);
+                    if (target.marker.isPopupOpen()) { target.marker.setPopupContent(createPopupHTML(target)); }
+                }
+                var coordCell = document.getElementById("coord-" + target.id);
+                if(coordCell) coordCell.innerHTML = `${dispLng.toFixed(4)}°E, ${dispLat.toFixed(4)}°N`;
+            });
+        }, 1000); 
+
+        // 6. SWITCH BẬT/TẮT LAYER
+        document.getElementById('toggleAI').addEventListener('change', function() {
+            var statusText = document.getElementById('model-status');
+            if (this.checked) {
+                map.addLayer(aiLayerGroup);
+                statusText.innerHTML = '<i class="fa-solid fa-satellite-dish"></i> Đang quét';
+                statusText.style.color = "var(--active-color)";
+            } else {
+                map.removeLayer(aiLayerGroup);
+                statusText.innerHTML = '<i class="fa-solid fa-circle-pause"></i> Đã tạm dừng';
+                statusText.style.color = "#718096";
+                map.closePopup();
+            }
+        });
+
+        // 7. BIỂU ĐỒ THỜI GIAN THỰC
+        function createDynamicChart(canvasId, label, initialData, color, yMin, yMax) {
+            var ctx = document.getElementById(canvasId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line', 
+                data: { 
+                    labels: ['1','2','3','4','5','6','7','8','9','10'],
+                    datasets: [{ label: label, data: initialData, borderColor: color, backgroundColor: color + '25', fill: true, borderWidth: 2, pointRadius: 0, tension: 0.4 }] 
+                },
+                options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false, min: yMin, max: yMax } } }
+            });
+        }
+        
+        var chartDO   = createDynamicChart('chart1', 'DO (mg/L)', [5.5,5.8,5.7,6.0,5.9,5.8,5.4,5.6,5.8,5.7], '#2ec4b6', 4, 8);
+        var chartPoll = createDynamicChart('chart2', 'Phù sa', [38,42,40,45,48,44,41,39,42,43], '#ff595e', 20, 70);
+        var chartFlow = createDynamicChart('chart3', 'Lưu tốc', [0.8,0.85,0.7,0.9,1.0,0.85,0.8,0.75,0.8,0.88], '#ffca3a', 0.2, 1.5);
+
+        setInterval(function() {
+            if (document.getElementById('toggleAI').checked) {
+                var newDO = (5.4 + Math.random() * 0.8).toFixed(1);
+                var newTSS = Math.floor(35 + Math.random() * 20);
+                var newTemp = (28.8 + Math.random() * 0.8).toFixed(1);
+
+                document.getElementById('avg-temp').innerText = newTemp + '°C';
+                document.getElementById('avg-do').innerText = newDO + ' mg/L';
+                document.getElementById('avg-tss').innerText = newTSS + ' mg/L';
+
+                chartDO.data.datasets[0].data.shift(); chartDO.data.datasets[0].data.push(parseFloat(newDO)); chartDO.update();
+                chartPoll.data.datasets[0].data.shift(); chartPoll.data.datasets[0].data.push(newTSS); chartPoll.update();
+                chartFlow.data.datasets[0].data.shift(); chartFlow.data.datasets[0].data.push(0.7 + Math.random() * 0.4); chartFlow.update();
+            }
+        }, 1800); 
+    </script>
+</body>
+</html>
