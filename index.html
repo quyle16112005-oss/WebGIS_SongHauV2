@@ -134,3 +134,156 @@
                     <div style="font-size: 11px; color: var(--accent-color); font-weight: bold; margin-bottom: 4px; display:flex; justify-content:space-between;">
                         <span><i class="fa-solid fa-arrows-up-down-left-right"></i> Vi Chỉnh Khớp Lòng Sông</span>
                         <span style="cursor:pointer; color:#ffca3a; text-decoration:underline;" onclick="resetOffsets()">Mặc định</span>
+                    </div>
+                    <div class="flex-row" style="font-size:11px; margin:0;">
+                        <span>Trái / Phải (Kinh độ):</span>
+                        <input type="range" id="offsetLng" class="range-slider" style="width:130px;" min="-0.025" max="0.025" step="0.0005" value="0" oninput="applyOffset()">
+                    </div>
+                    <div class="flex-row" style="font-size:11px; margin:0;">
+                        <span>Lên / Xuống (Vĩ độ):</span>
+                        <input type="range" id="offsetLat" class="range-slider" style="width:130px;" min="-0.025" max="0.025" step="0.0005" value="0" oninput="applyOffset()">
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <div class="section-title">Trung Bình Toàn Tuyến Sông (Live)</div>
+                <div class="variable-list">
+                    <div class="var-item"><span>Nhiệt độ mặt nước:</span><span class="var-val" id="avg-temp" style="color: #ffca3a;">29.2°C</span></div>
+                    <div class="var-item"><span>Oxy hòa tan (DO):</span><span class="var-val" id="avg-do" style="color: #2ec4b6;">5.8 mg/L</span></div>
+                    <div class="var-item"><span>Độ đục (Phù sa TSS):</span><span class="var-val" id="avg-tss" style="color: #ff595e;">42 mg/L</span></div>
+                </div>
+            </div>
+            
+            <div class="chart-box"><div class="section-title" style="border:0; margin:0;">Biến Động Oxy Hòa Tan (mg/L)</div><div class="chart-container"><canvas id="chart1"></canvas></div></div>
+            <div class="chart-box"><div class="section-title" style="border:0; margin:0;">Chỉ Số Phù Sa / Độ Đục (mg/L)</div><div class="chart-container"><canvas id="chart2"></canvas></div></div>
+            <div class="chart-box"><div class="section-title" style="border:0; margin:0;">Lưu Tốc Dòng Chảy (m/s)</div><div class="chart-container"><canvas id="chart3"></canvas></div></div>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="map-overlay-right">
+            <div class="section-title" style="color: var(--active-color);">Theo Dõi Đàn Cá / Lồng Bè (V4.0)</div>
+            <div class="btn-group" style="margin-bottom: 8px;">
+                <button class="action-btn active" id="filter-all" onclick="filterTargets('all')">Tất cả</button>
+                <button class="action-btn" id="filter-fish" onclick="filterTargets('fish')">Đàn cá</button>
+                <button class="action-btn" id="filter-cage" onclick="filterTargets('cage')">Lồng bè</button>
+            </div>
+            <table class="catch-table">
+                <thead><tr><th>Mã Trạm</th><th>Loại</th><th>Tọa Độ (Click để Zoom)</th></tr></thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <div class="map-legend">
+            <span id="legend-title" style="font-weight: bold; color: #fff; font-size: 12px;"><i class="fa-solid fa-draw-polygon"></i> Vùng Nhiệt Độ Mặt Nước Sông Hậu (°C)</span>
+            <div class="legend-bar"></div>
+            <div class="legend-labels" id="legend-labels"><span>27.5°C (Mát)</span><span>29.0°C</span><span>31.0°C (Nóng)</span></div>
+        </div>
+    </div>
+
+    <!-- ĐOẠN SCRIPT ĐÃ ĐƯỢC SỬA LỖI -->
+    <script>
+        // 1. Đồng hồ thời gian thực
+        function updateTime() {
+            var now = new Date();
+            var timeEl = document.getElementById('live-time');
+            if(timeEl) timeEl.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i> Trạm Cần Thơ: ' + now.toLocaleTimeString('vi-VN');
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 2. Cầu nối (Bridge) chuyển lệnh từ các nút bấm UI sang file app.js
+        function resetMapView() {
+            if(window.appGIS && window.appGIS.map) window.appGIS.map.flyTo([10.045, 105.795], 13, { duration: 1.0 });
+        }
+
+        function switchMode(mode) {
+            document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
+            var btn = document.getElementById('mode-' + mode);
+            if(btn) btn.classList.add('active');
+            
+            var titleEl = document.getElementById('legend-title');
+            var labelsEl = document.getElementById('legend-labels');
+            if (mode === 'temp') {
+                titleEl.innerHTML = '<i class="fa-solid fa-draw-polygon"></i> Vùng Nhiệt Độ Mặt Nước Sông Hậu (°C)';
+                labelsEl.innerHTML = '<span>28.0°C (Mát)</span><span>29.2°C</span><span>30.5°C (Nóng)</span>';
+            } else if (mode === 'do') {
+                titleEl.innerHTML = '<i class="fa-solid fa-draw-polygon"></i> Phân Vùng Oxy Hòa Tan DO (mg/L)';
+                labelsEl.innerHTML = '<span>> 6.5 (Tốt)</span><span>5.8 (TB)</span><span>< 5.2 (Thiếu Oxy)</span>';
+            } else {
+                titleEl.innerHTML = '<i class="fa-solid fa-draw-polygon"></i> Phân Vùng Độ Đục Phù Sa TSS (mg/L)';
+                labelsEl.innerHTML = '<span>25 (Trong)</span><span>45 (Vừa)</span><span>> 60 (Đục cao)</span>';
+            }
+
+            if(window.appGIS) {
+                window.appGIS.currentMode = mode;
+                window.appGIS.renderPolygons();
+            }
+        }
+
+        function toggleMeasureTool() {
+            if(window.appGIS) {
+                window.appGIS.measureActive = !window.appGIS.measureActive;
+                var btn = document.getElementById('btnMeasure');
+                if (window.appGIS.measureActive) {
+                    btn.classList.add('tool-active');
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Đang Bật: Click Vào Sông Để Đo';
+                    document.getElementById('map').style.cursor = 'crosshair';
+                } else {
+                    btn.classList.remove('tool-active');
+                    btn.innerHTML = '<i class="fa-solid fa-crosshairs"></i> Bật Click Bản Đồ Đo Nước Tự Do';
+                    document.getElementById('map').style.cursor = '';
+                    if (window.appGIS.measureMarker) {
+                        window.appGIS.map.removeLayer(window.appGIS.measureMarker);
+                        window.appGIS.measureMarker = null;
+                    }
+                }
+            }
+        }
+
+        function applyOffset() {
+            if(window.appGIS) {
+                window.appGIS.offsets.lng = parseFloat(document.getElementById('offsetLng').value);
+                window.appGIS.offsets.lat = parseFloat(document.getElementById('offsetLat').value);
+                window.appGIS.renderPolygons();
+                window.appGIS.updateTargetsOnMap();
+            }
+        }
+
+        function resetOffsets() {
+            document.getElementById('offsetLng').value = 0;
+            document.getElementById('offsetLat').value = 0;
+            applyOffset();
+        }
+
+        function filterTargets(filterType) {
+            document.querySelectorAll('#filter-all, #filter-fish, #filter-cage').forEach(b => b.classList.remove('active'));
+            var btn = document.getElementById('filter-' + filterType);
+            if(btn) btn.classList.add('active');
+        }
+
+        // 3. Đổi bản đồ nền
+        document.addEventListener('DOMContentLoaded', () => {
+            var btnBasemap = document.getElementById('btnBasemap');
+            if(btnBasemap) {
+                btnBasemap.onclick = function() {
+                    if(!window.appGIS) return;
+                    window.appGIS.map.removeLayer(window.appGIS.basemaps[window.appGIS.currentBasemap]);
+                    if (window.appGIS.currentBasemap === 'satellite') {
+                        window.appGIS.currentBasemap = 'osm';
+                        this.innerHTML = '<i class="fa-solid fa-layer-group"></i> Đổi Nền: Bản Đồ Đường Phố';
+                    } else {
+                        window.appGIS.currentBasemap = 'satellite';
+                        this.innerHTML = '<i class="fa-solid fa-layer-group"></i> Đổi Nền: Vệ Tinh';
+                    }
+                    window.appGIS.basemaps[window.appGIS.currentBasemap].addTo(window.appGIS.map);
+                };
+            }
+        });
+    </script>
+    
+    <!-- Lệnh gọi file app.js chứa Firebase Realtime Database -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>
