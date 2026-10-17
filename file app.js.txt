@@ -1,0 +1,198 @@
+// file: app.js
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+class WebGISMonitor {
+    constructor() {
+        // Cấu hình cơ bản
+        this.mapCoords = [10.045, 105.795];
+        this.zoomLevel = 13;
+        this.currentMode = 'temp'; 
+        this.isScanning = true;
+        this.measureActive = false;
+        
+        // Dữ liệu bộ nhớ
+        this.riverZones = [];
+        this.targets = {}; 
+        
+        // Quản lý Layer Leaflet
+        this.layers = {
+            targetMarkers: {} // Lưu trữ marker để cập nhật tọa độ thay vì xóa vẽ lại
+        };
+        this.offsets = { lat: 0, lng: 0 };
+        
+        this.initFirebase();
+        this.initMap();
+        this.initCharts();
+        this.loadStaticData(); 
+        this.bindEvents();
+        this.listenToRealTimeData(); // Thay thế startSimulation()
+    }
+
+    // KẾT NỐI DATABASE FREE
+    initFirebase() {
+        // Thay thế các thông số này bằng thông số dự án Firebase của bạn
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "your-project.firebaseapp.com",
+            databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+            projectId: "your-project"
+        };
+        const app = initializeApp(firebaseConfig);
+        this.db = getDatabase(app);
+    }
+
+    // 1. KHỞI TẠO BẢN ĐỒ
+    initMap() {
+        this.map = L.map('map', {zoomControl: false}).setView(this.mapCoords, this.zoomLevel);
+        L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+
+        this.basemaps = {
+            satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }),
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 })
+        };
+        
+        this.currentBasemap = 'satellite';
+        this.basemaps[this.currentBasemap].addTo(this.map);
+
+        this.layers.aiGroup = L.layerGroup().addTo(this.map);
+        this.layers.polygonGroup = L.layerGroup().addTo(this.layers.aiGroup);
+        this.layers.targetGroup = L.layerGroup().addTo(this.layers.aiGroup);
+        this.measureMarker = null;
+    }
+
+    // 2. LẤY DỮ LIỆU TĨNH (VÙNG LÒNG SÔNG) 1 LẦN DUY NHẤT
+    loadStaticData() {
+        const zonesRef = ref(this.db, 'staticData/riverZones');
+        get(zonesRef).then((snapshot) => {
+            if (snapshot.exists()) {
+                this.riverZones = snapshot.val();
+                this.renderPolygons();
+            } else {
+                // Dữ liệu dự phòng nếu DB trống
+                this.riverZones = [
+                    { id: "VUNG-S1", side: "Luồng Đông", temp: 29.5, doVal: 5.6, tss: 40, coords: [[10.092, 105.736], [10.095, 105.740], [10.086, 105.752], [10.083, 105.748]] }
+                ];
+                this.renderPolygons();
+            }
+        });
+    }
+
+    // 3. LẮNG NGHE DỮ LIỆU THỜI GIAN THỰC TỪ SENSOR & GPS
+    listenToRealTimeData() {
+        // Lắng nghe thay đổi tọa độ của cá / lồng bè
+        const targetsRef = ref(this.db, 'realtime/targets');
+        onValue(targetsRef, (snapshot) => {
+            if (!this.isScanning) return;
+            const data = snapshot.val();
+            if (data) {
+                this.targets = data; 
+                this.updateTargetsOnMap();
+            }
+        });
+
+        // Lắng nghe thay đổi cảm biến Oxy hòa tan (DO) cho biểu đồ
+        const sensorDORef = ref(this.db, 'realtime/sensors/do/currentValue');
+        onValue(sensorDORef, (snapshot) => {
+            if (!this.isScanning) return;
+            const newDO = snapshot.val();
+            if (newDO !== null) {
+                this.updateChartData(this.charts.do, newDO);
+                document.getElementById('avg-do').innerText = parseFloat(newDO).toFixed(1) + ' mg/L';
+            }
+        });
+    }
+
+    getZoneColor(zone) {
+        if (this.currentMode === 'temp') return zone.temp > 30 ? '#ff595e' : zone.temp > 28.5 ? '#ffca3a' : '#2ec4b6';
+        if (this.currentMode === 'do') return zone.doVal < 5.2 ? '#ff595e' : zone.doVal < 6 ? '#ffca3a' : '#2ec4b6';
+        return zone.tss > 55 ? '#ff595e' : zone.tss > 35 ? '#ffca3a' : '#2ec4b6';
+    }
+
+    renderPolygons() {
+        this.layers.polygonGroup.clearLayers();
+        this.riverZones.forEach(zone => {
+            const shiftedCoords = zone.coords.map(pt => [pt[0] + this.offsets.lat, pt[1] + this.offsets.lng]);
+            const poly = L.polygon(shiftedCoords, {
+                fillColor: this.getZoneColor(zone), fillOpacity: 0.6, weight: 1, color: '#fff'
+            }).addTo(this.layers.polygonGroup);
+            poly.bindPopup(`<b>${zone.id}</b><br>Nhiệt độ: ${zone.temp}°C<br>DO: ${zone.doVal}`);
+        });
+    }
+
+    // CẬP NHẬT MARKER THAY VÌ XÓA VẼ LẠI
+    updateTargetsOnMap() {
+        const tbody = document.getElementById('table-body');
+        if(tbody) tbody.innerHTML = '';
+
+        Object.keys(this.targets).forEach(key => {
+            const t = this.targets[key];
+            const lat = t.lat + this.offsets.lat;
+            const lng = t.lng + this.offsets.lng;
+
+            // Nếu marker đã tồn tại, chỉ cần di chuyển nó
+            if (this.layers.targetMarkers[key]) {
+                this.layers.targetMarkers[key].setLatLng([lat, lng]);
+                this.layers.targetMarkers[key].setPopupContent(`<b>${t.name}</b><br>Tọa độ: ${lng.toFixed(4)}, ${lat.toFixed(4)}`);
+            } else {
+                // Nếu chưa có, tạo mới
+                const color = t.type === 'fish' ? '#ffca3a' : '#ff595e';
+                this.layers.targetMarkers[key] = L.circleMarker([lat, lng], { radius: 8, fillColor: color, weight: 2, color: '#fff', fillOpacity: 1 })
+                    .addTo(this.layers.targetGroup)
+                    .bindPopup(`<b>${t.name}</b><br>Tọa độ: ${lng.toFixed(4)}, ${lat.toFixed(4)}`);
+            }
+            
+            // Cập nhật bảng
+            if(tbody) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${t.id}</td><td>${t.name}</td><td id="coord-${t.id}">${lng.toFixed(4)}, ${lat.toFixed(4)}</td>`;
+                tr.onclick = () => { this.map.flyTo([lat, lng], 15); this.layers.targetMarkers[key].openPopup(); };
+                tbody.appendChild(tr);
+            }
+        });
+    }
+
+    bindEvents() {
+        this.map.on('click', (e) => {
+            if (!this.measureActive) return;
+            if (this.measureMarker) this.map.removeLayer(this.measureMarker);
+            this.measureMarker = L.circleMarker(e.latlng, { radius: 9, fillColor: '#00f5d4', color: '#fff', weight: 3, fillOpacity: 1 })
+                .addTo(this.map)
+                .bindPopup(`<b>Đo nhanh</b><br>Tọa độ: ${e.latlng.lng.toFixed(4)}, ${e.latlng.lat.toFixed(4)}<br>Nhiệt độ: ${(28+Math.random()*2).toFixed(1)}°C`).openPopup();
+        });
+
+        const toggleAI = document.getElementById('toggleAI');
+        if(toggleAI) {
+            toggleAI.addEventListener('change', (e) => {
+                this.isScanning = e.target.checked;
+                this.isScanning ? this.map.addLayer(this.layers.aiGroup) : this.map.removeLayer(this.layers.aiGroup);
+            });
+        }
+    }
+
+    initCharts() {
+        const createChart = (canvasId, color, min, max) => {
+            const canvas = document.getElementById(canvasId);
+            if(!canvas) return null;
+            return new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels: ['1','2','3','4','5','6'], datasets: [{ data: [5,5.5,5.2,5.8,5.4,5.6], borderColor: color }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: min, max: max } } }
+            });
+        };
+        this.charts = {
+            do: createChart('chart1', '#2ec4b6', 4, 8)
+        };
+    }
+
+    updateChartData(chartInstance, newValue) {
+        if(!chartInstance) return;
+        chartInstance.data.datasets[0].data.shift();
+        chartInstance.data.datasets[0].data.push(parseFloat(newValue));
+        chartInstance.update();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.appGIS = new WebGISMonitor();
+});
