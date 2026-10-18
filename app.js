@@ -1,6 +1,6 @@
 // file: app.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
 class WebGISMonitor {
     constructor() {
@@ -19,12 +19,20 @@ class WebGISMonitor {
         
         this.initFirebase();
         this.initMap();
-        this.initGeometries(); // Tạo ranh giới 20 phân vùng
-        this.generateLogicalMockData(); // Tạo dữ liệu giả lập có ý nghĩa địa lý
+        this.initGeometries(); // Tạo ranh giới 20 phân vùng (Lưới không gian)
         this.initCharts();
         this.bindEvents();
+        
+        // Gọi dữ liệu thật từ Firebase, nếu không có mới xài dữ liệu giả
         this.listenToRealTimeData();
-        this.renderPolygons(); // Vẽ bản đồ lần đầu
+        
+        // --- ĐOẠN MÃ THÊM VÀO ĐỂ XÓA TÊN "LÊ GIA KIỆT" NẾU CÒN SÓT ---
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            if (btn.innerHTML.includes('Lê Gia Kiệt')) {
+                btn.style.display = 'none'; 
+            }
+        });
+        // ------------------------------------------------
     }
 
     initFirebase() {
@@ -62,16 +70,16 @@ class WebGISMonitor {
     // TẠO LƯỚI KHÔNG GIAN TĨNH (20 POLYGON DỌC SÔNG HẬU)
     initGeometries() {
         const riverBanks = [
-            { left: [10.092, 105.736], right: [10.098, 105.744] }, // Khúc 1: Thượng nguồn
+            { left: [10.092, 105.736], right: [10.098, 105.744] }, // Khúc 1
             { left: [10.083, 105.748], right: [10.089, 105.756] }, 
-            { left: [10.074, 105.762], right: [10.080, 105.771] }, // Khúc 3: Bắt đầu vào Cồn Khương
+            { left: [10.074, 105.762], right: [10.080, 105.771] }, // Khúc 3
             { left: [10.064, 105.776], right: [10.070, 105.785] }, 
-            { left: [10.054, 105.789], right: [10.060, 105.798] }, // Khúc 5: TT Ninh Kiều
+            { left: [10.054, 105.789], right: [10.060, 105.798] }, // Khúc 5
             { left: [10.044, 105.800], right: [10.050, 105.809] }, 
-            { left: [10.034, 105.810], right: [10.040, 105.819] }, // Khúc 7: Cầu Cần Thơ
-            { left: [10.023, 105.818], right: [10.029, 105.828] }, // Khúc 8: Cảng Cái Cui
+            { left: [10.034, 105.810], right: [10.040, 105.819] }, // Khúc 7
+            { left: [10.023, 105.818], right: [10.029, 105.828] }, // Khúc 8
             { left: [10.011, 105.826], right: [10.017, 105.836] }, 
-            { left: [9.999,  105.833], right: [10.005, 105.843] }  // Khúc 10: Thoát ra hạ lưu
+            { left: [9.999,  105.833], right: [10.005, 105.843] }  // Khúc 10
         ];
 
         for (let i = 0; i < riverBanks.length - 1; i++) {
@@ -90,12 +98,10 @@ class WebGISMonitor {
     // TẠO DỮ LIỆU ĐỊA LÝ LOGIC TRONG LÚC CHỜ FIREBASE
     generateLogicalMockData() {
         Object.keys(this.zoneGeometries).forEach(key => {
-            const isCanThoSide = key.endsWith('A'); // Bờ Cần Thơ ô nhiễm hơn
+            const isCanThoSide = key.endsWith('A'); 
             const segment = parseInt(key.replace('VUNG-S', '').replace('A', '').replace('B', ''));
             
-            // Logic: Khúc 4, 5, 6 là trung tâm thành phố -> Nhiệt độ cao, DO thấp
             const isUrbanCore = (segment >= 4 && segment <= 6);
-            // Logic: Khúc 8, 9 là cảng công nghiệp -> TSS cực cao
             const isIndustrial = (segment >= 8);
 
             let temp = 27.5 + (isUrbanCore ? 1.5 : 0) + (isCanThoSide ? 0.8 : 0) + Math.random()*0.5;
@@ -108,18 +114,24 @@ class WebGISMonitor {
                 tss: parseInt(tss) 
             };
         });
+        this.renderPolygons();
     }
 
     listenToRealTimeData() {
-        // Lắng nghe dữ liệu vùng (Ghi đè dữ liệu giả lập nếu có kết nối Firebase)
+        // Lắng nghe dữ liệu vùng từ Firebase
         const zonesRef = ref(this.db, 'realtime/zoneData');
         onValue(zonesRef, (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
                 Object.keys(data).forEach(k => {
-                    if(this.zoneData[k]) this.zoneData[k] = data[k];
+                    if(this.zoneGeometries[k]) { // Đảm bảo chỉ nạp data cho vùng có trên bản đồ
+                         this.zoneData[k] = data[k];
+                    }
                 });
                 if (this.isScanning) this.renderPolygons();
+            } else {
+                // Nếu Firebase chưa có dữ liệu vùng, sinh giả lập tạm
+                 this.generateLogicalMockData();
             }
         });
 
@@ -153,6 +165,7 @@ class WebGISMonitor {
     }
 
     getZoneColor(data) {
+        if (!data) return '#2ec4b6'; // Default color
         if (this.currentMode === 'temp') return data.temp > 30 ? '#ff595e' : data.temp > 28.5 ? '#ffca3a' : '#2ec4b6';
         if (this.currentMode === 'do') return data.doVal < 5.2 ? '#ff595e' : data.doVal < 6 ? '#ffca3a' : '#2ec4b6';
         return data.tss > 55 ? '#ff595e' : data.tss > 40 ? '#ffca3a' : '#2ec4b6';
